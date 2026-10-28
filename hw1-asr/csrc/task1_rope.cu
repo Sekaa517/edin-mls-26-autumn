@@ -34,7 +34,8 @@ __global__ void rope_kernel(float* q, float* k, const float* inv_freq, int seq_l
   // ======================== BLANK 1.1 =========================
   // Set idx to this thread's global index. Threads without a pair
   // (q_pairs + k_pairs in total) do nothing.
-  // YOUR CODE HERE
+  idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= q_pairs + k_pairs) return;
   // ============================================================
 
   float* x = q;               // the tensor this thread works on
@@ -42,7 +43,11 @@ __global__ void rope_kernel(float* q, float* k, const float* inv_freq, int seq_l
   // ======================== BLANK 1.2 =========================
   // Threads past q's pairs work on k: make x, num_heads and idx describe the
   // tensor this thread works on, with idx counting from 0 inside it.
-  // YOUR CODE HERE
+  if (idx >= q_pairs) {
+    x = k;
+    num_heads = num_k_heads;
+    idx -= q_pairs;
+  }
   // ============================================================
 
   int row = 0;  // which row (one head of one token) of x
@@ -50,13 +55,21 @@ __global__ void rope_kernel(float* q, float* k, const float* inv_freq, int seq_l
   int pos = 0;  // position of the token this row belongs to
   // ======================== BLANK 1.3 =========================
   // Set row, i (the pair inside the row) and pos (the token position of the row).
-  // YOUR CODE HERE
+  row = idx / half;
+  i = idx - row * half;
+  pos = (row / num_heads) % seq_len;
   // ============================================================
 
   float* v = x + static_cast<size_t>(row) * head_dim;  // start of this row
   // ======================== BLANK 1.4 =========================
   // Rotate the pair (v[i], v[i + half]) in place.
-  // YOUR CODE HERE
+  const float a = v[i];
+  const float b = v[i + half];
+  const float angle = static_cast<float>(pos) * inv_freq[i];
+  const float c = cosf(angle);
+  const float s = sinf(angle);
+  v[i] = a * c - b * s;
+  v[i + half] = b * c + a * s;
   // ============================================================
 }
 

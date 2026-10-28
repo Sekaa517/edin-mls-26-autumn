@@ -42,7 +42,14 @@ __global__ void rmsnorm_kernel(const float* x, const float* weight, float* y, in
 
   // ======================== BLANK 2.5 =========================
   // RMSNorm of this row: y = x / sqrt(mean(x^2) + eps) * weight.
-  // YOUR CODE HERE
+  float sq = 0.0f;
+  for (int c = threadIdx.x; c < cols; c += blockDim.x) {
+    const float v = xr[c];
+    sq += v * v;
+  }
+  const float rstd = rsqrtf(block_reduce_sum(sq) / cols + eps);
+  for (int c = threadIdx.x; c < cols; c += blockDim.x)
+    yr[c] = xr[c] * rstd * weight[c];
   // ============================================================
 }
 
@@ -58,12 +65,20 @@ __global__ void softmax_kernel(const float* x, float* y, int cols) {
   // ======================== BLANK 2.6 =========================
   // Pass 1: set row_max and row_sum (the sum of exp(x - row_max) over the row),
   // reading x only once, with MaxSum.
-  // YOUR CODE HERE
+  MaxSum local = {-INFINITY, 0.0f};
+  for (int c = threadIdx.x; c < cols; c += blockDim.x)
+    local = maxsum_merge(local, {xr[c], 1.0f});
+
+  row_max = block_reduce_max(local.m);
+  const float scaled_sum =
+      local.m == -INFINITY ? 0.0f : local.l * __expf(local.m - row_max);
+  row_sum = block_reduce_sum(scaled_sum);
   // ============================================================
 
   // ======================== BLANK 2.7 =========================
   // Pass 2: y = exp(x - row_max) / row_sum.
-  // YOUR CODE HERE
+  for (int c = threadIdx.x; c < cols; c += blockDim.x)
+    yr[c] = __expf(xr[c] - row_max) / row_sum;
   // ============================================================
 }
 
