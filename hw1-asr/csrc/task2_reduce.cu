@@ -11,7 +11,7 @@
 #include "asr_kernels.h"
 #include "task2_reduce.cuh"
 
-constexpr int REDUCE_THREADS = 256;  // threads per block: a multiple of 32, at most 1024
+constexpr int REDUCE_THREADS = 512;  // threads per block: a multiple of 32, at most 1024
 
 // Worked example. LayerNorm: y = (x - mean) / sqrt(var + eps) * weight + bias
 __global__ void layernorm_kernel(const float* x, const float* weight, const float* bias,

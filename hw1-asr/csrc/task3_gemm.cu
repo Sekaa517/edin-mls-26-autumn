@@ -16,7 +16,7 @@
 #include "asr_kernels.h"
 #include "common.cuh"
 
-constexpr int TILE = 16;  // try 8 or 32 (32 x 32 = 1024 threads, the maximum per block)
+constexpr int TILE = 32;  // try 8 or 32 (32 x 32 = 1024 threads, the maximum per block)
 
 __global__ void linear_tiled_kernel(const float* x, const float* w, const float* bias,
                                     float* y, int M, int N, int K, int act) {

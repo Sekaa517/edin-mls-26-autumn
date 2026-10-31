@@ -21,7 +21,7 @@
 #include "asr_kernels.h"
 #include "common.cuh"
 
-constexpr int ROPE_THREADS = 256;
+constexpr int ROPE_THREADS = 64;
 
 __global__ void rope_kernel(float* q, float* k, const float* inv_freq, int seq_len,
                             int num_q_heads, int num_k_heads, int q_rows, int k_rows,

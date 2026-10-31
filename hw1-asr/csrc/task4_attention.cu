@@ -27,7 +27,7 @@
 #include "asr_kernels.h"
 #include "task2_reduce.cuh"  // warp_reduce_max, warp_reduce_sum from task 2
 
-constexpr int ATTN_WARPS = 4;          // queries per block; try 2, 8 or 16
+constexpr int ATTN_WARPS = 16;          // queries per block; try 2, 8 or 16
 constexpr int KV_TILE = WARP_SIZE;     // keys per tile: one per lane
 constexpr int MAX_HEAD_DIM = 128;      // head_dim must be a multiple of 32, at most this
 constexpr int MAX_DIMS_PER_LANE = MAX_HEAD_DIM / WARP_SIZE;
