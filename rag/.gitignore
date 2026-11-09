@@ -6,7 +6,6 @@ __pycache__/
 .cache/
 .venv/
 venv/
-results/
 *.log
 .pytest_cache/
 *.aux
