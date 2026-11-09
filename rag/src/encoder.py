@@ -7,10 +7,18 @@ import numpy as np
 class LocalEncoder:
     def __init__(self, model_dir: str | Path, device: str | None = None):
         from sentence_transformers import SentenceTransformer
+        import torch
 
         kwargs = {}
         if device is not None:
             kwargs["device"] = device
+        # CPU kernels for float16 are often much slower than float32. Keep the
+        # supplied float16 checkpoint on CUDA, but use float32 for CPU inference.
+        target_device = str(device).lower() if device is not None else (
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
+        if target_device == "cpu":
+            kwargs["model_kwargs"] = {"dtype": torch.float32}
 
         self.model = SentenceTransformer(
             str(model_dir),
