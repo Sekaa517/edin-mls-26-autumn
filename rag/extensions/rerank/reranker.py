@@ -82,6 +82,12 @@ class LocalBGEReranker:
             )
         self.model.to(self.device)
         self.model.eval()
+        self.synchronize()
+
+    def synchronize(self) -> None:
+        """Wait for pending CUDA copies/kernels in the local reranker process."""
+        if self.device.type == "cuda":
+            self.torch.cuda.synchronize(self.device)
 
     def score_pairs(self, query: str, texts: list[str]) -> list[float]:
         """Return one relevance score per ``(query, text)`` pair."""

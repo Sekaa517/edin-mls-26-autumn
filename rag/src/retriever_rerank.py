@@ -69,6 +69,9 @@ class RerankRetriever:
         candidate_scores = dense["scores"]
         candidate_texts = [self.data.record_text(record_id) for record_id in candidate_ids]
 
+        synchronize = getattr(self.reranker, "synchronize", None)
+        if callable(synchronize):
+            synchronize()
         rerank_start = time.perf_counter()
         rerank_scores = self.reranker.score_pairs(query_text, candidate_texts)
         ranked = sorted(
@@ -76,6 +79,8 @@ class RerankRetriever:
             key=lambda item: (-item[2], item[0]),
         )
         selected = ranked[:min(final_k, len(ranked))]
+        if callable(synchronize):
+            synchronize()
         rerank_ms = (time.perf_counter() - rerank_start) * 1000.0
         retrieval_total_ms = (time.perf_counter() - total_start) * 1000.0
 

@@ -26,6 +26,7 @@ python rag/scripts/rag_evaluation_rerank.py \
   --k-final 5 \
   --device cpu \
   --rerank-device cuda \
+  --warmup 2 \
   --output-dir rag/results/rerank-practice
 ```
 
@@ -38,6 +39,7 @@ python rag/scripts/generate_answers_rerank.py \
   --k-final 5 \
   --device cpu \
   --rerank-device cuda \
+  --warmup 2 \
   --transcript-cache rag/.cache/practice_shared.jsonl \
   --output rag/results/rerank-practice/answers.jsonl
 ```

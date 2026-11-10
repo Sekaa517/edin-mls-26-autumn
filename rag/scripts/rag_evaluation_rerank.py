@@ -46,6 +46,7 @@ def main():
     parser.add_argument("--rerank-device", default=None)
     parser.add_argument("--rerank-batch-size", type=int, default=16)
     parser.add_argument("--rerank-max-length", type=int, default=512)
+    parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--model-dir", type=Path, default=DEFAULT_MODEL_DIR)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -56,6 +57,8 @@ def main():
         parser.error("--k-final cannot exceed --k")
     if args.rerank_batch_size < 1 or args.rerank_max_length < 1:
         parser.error("rerank batch size and max length must be positive")
+    if args.warmup < 0:
+        parser.error("--warmup must be non-negative")
     if args.limit is not None and args.limit < 1:
         parser.error("--limit must be positive")
 
@@ -92,6 +95,20 @@ def main():
         k=args.k,
         k_final=args.k_final,
     )
+    warmup_vector = np.asarray(
+        retriever.dense.embeddings[0],
+        dtype=np.float32,
+    )
+    for index in range(args.warmup):
+        print(f"Retrieval warm-up {index + 1}/{args.warmup}...", flush=True)
+        retriever.retrieve(
+            warmup_vector,
+            "warmup query for reranker initialization",
+            k=args.k,
+            k_final=args.k_final,
+        )
+    if args.warmup:
+        print("Retrieval warm-up complete.", flush=True)
 
     rows = []
     recall_key = f"R@{args.k_final}"
@@ -171,6 +188,7 @@ def main():
         "reranker_model": "BAAI/bge-reranker-v2-m3",
         "rerank_batch_size": args.rerank_batch_size,
         "rerank_max_length": args.rerank_max_length,
+        "warmup": args.warmup,
         **metric_values,
         "mean_dense_ms": float(
             statistics.mean([row["dense_ms"] for row in rows])
