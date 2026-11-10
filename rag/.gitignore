@@ -20,3 +20,7 @@ data/rag_corpus/*
 !data/rag_corpus/README.md
 models/enc_a/*
 !models/enc_a/README.md
+
+# Local reranker weights are downloaded separately and must not enter Git.
+extensions/rerank/models/*
+!extensions/rerank/models/README.md
