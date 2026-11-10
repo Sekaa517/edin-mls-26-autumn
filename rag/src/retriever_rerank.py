@@ -61,7 +61,9 @@ class RerankRetriever:
         total_start = time.perf_counter()
         dense_start = time.perf_counter()
         dense = self.dense.retrieve(query_vector, retrieval_k)
-        dense_ms = (time.perf_counter() - dense_start) * 1000.0
+        dense_wall_ms = (time.perf_counter() - dense_start) * 1000.0
+        # Match baseline retrieval_ms exactly: matrix multiplication plus Top-k.
+        dense_ms = float(dense["latency_ms"])
 
         candidate_ids = dense["record_ids"]
         candidate_scores = dense["scores"]
@@ -85,6 +87,7 @@ class RerankRetriever:
             "candidate_dense_scores": [float(score) for score in candidate_scores],
             "candidate_rerank_scores": [float(score) for score in rerank_scores],
             "dense_ms": float(dense_ms),
+            "dense_wall_ms": float(dense_wall_ms),
             "rerank_ms": float(rerank_ms),
             "retrieval_total_ms": float(retrieval_total_ms),
             "k": retrieval_k,

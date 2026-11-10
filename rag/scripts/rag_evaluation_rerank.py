@@ -136,6 +136,7 @@ def main():
                     args.k_final,
                 ),
                 "dense_ms": retrieval["dense_ms"],
+                "dense_wall_ms": retrieval["dense_wall_ms"],
                 "rerank_ms": retrieval["rerank_ms"],
                 "retrieval_total_ms": retrieval["retrieval_total_ms"],
                 "record_ids": retrieval["record_ids"],
@@ -174,6 +175,9 @@ def main():
         "mean_dense_ms": float(
             statistics.mean([row["dense_ms"] for row in rows])
         ) if rows else 0.0,
+        "mean_dense_wall_ms": float(
+            statistics.mean([row["dense_wall_ms"] for row in rows])
+        ) if rows else 0.0,
         "mean_rerank_ms": float(
             statistics.mean([row["rerank_ms"] for row in rows])
         ) if rows else 0.0,
@@ -182,7 +186,12 @@ def main():
         ) if rows else 0.0,
         "latency": {
             name: summarize([row[name] for row in rows])
-            for name in ("dense_ms", "rerank_ms", "retrieval_total_ms")
+            for name in (
+                "dense_ms",
+                "dense_wall_ms",
+                "rerank_ms",
+                "retrieval_total_ms",
+            )
         },
     }
     with summary_path.open("x", encoding="utf-8") as stream:
@@ -192,6 +201,7 @@ def main():
     for name in metric_names:
         print(f"  {name:<14} {statistics.mean([row[name] for row in rows]):.6f}")
     print(f"  mean_dense_ms  {summary['mean_dense_ms']:.3f}")
+    print(f"  mean_dense_wall_ms {summary['mean_dense_wall_ms']:.3f}")
     print(f"  mean_rerank_ms {summary['mean_rerank_ms']:.3f}")
     print(f"  mean_total_ms  {summary['mean_retrieval_total_ms']:.3f}")
     print(f"\nSaved: {args.output_dir}")

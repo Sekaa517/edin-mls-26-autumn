@@ -121,6 +121,8 @@ class RerankRetrieverTests(unittest.TestCase):
         self.assertEqual(result["record_ids"], ["b", "c"])
         self.assertEqual(result["scores"], [0.9, 0.5])
         self.assertIn("dense_ms", result)
+        self.assertEqual(result["dense_ms"], 1.25)
+        self.assertIn("dense_wall_ms", result)
         self.assertIn("rerank_ms", result)
         self.assertIn("retrieval_total_ms", result)
         self.assertNotIn("latency_ms", result)
