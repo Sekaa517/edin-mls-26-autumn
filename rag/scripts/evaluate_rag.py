@@ -83,6 +83,7 @@ def main():
             "Recall@5": recall_at_k(ranked, rel, 5),
             "Recall@10": recall_at_k(ranked, rel, 10),
             "Recall@20": recall_at_k(ranked, rel, 20),
+            "Recall@40": recall_at_k(ranked, rel, 40),
             "Recall@100": recall_at_k(ranked, rel, 100),
             "MRR@10": mrr_at_k(ranked, rel, 10),
             "NDCG@10": ndcg_at_k(ranked, rel, 10),
@@ -91,7 +92,7 @@ def main():
         rows.append(row)
         print(f"[{i:>3}/{len(items)}] {qid} R@10={row['Recall@10']:.3f}")
 
-    keys = ["Recall@5", "Recall@10", "Recall@20", "Recall@100", "MRR@10", "NDCG@10"]
+    keys = ["Recall@5", "Recall@10", "Recall@20", "Recall@40", "Recall@100", "MRR@10", "NDCG@10"]
     print("\nAggregate:")
     for key in keys:
         print(f"  {key:<10} {np.mean([r[key] for r in rows]):.6f}")
