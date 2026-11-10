@@ -86,6 +86,7 @@ def main():
             "Recall@100": recall_at_k(ranked, rel, 100),
             "MRR@10": mrr_at_k(ranked, rel, 10),
             "NDCG@10": ndcg_at_k(ranked, rel, 10),
+            "retrieval_ms": float(ret["latency_ms"]),
         }
         rows.append(row)
         print(f"[{i:>3}/{len(items)}] {qid} R@10={row['Recall@10']:.3f}")
@@ -94,6 +95,10 @@ def main():
     print("\nAggregate:")
     for key in keys:
         print(f"  {key:<10} {np.mean([r[key] for r in rows]):.6f}")
+    print(
+        f"  {'retrieval_ms':<10} "
+        f"{np.mean([r['retrieval_ms'] for r in rows]):.3f} ms on average"
+    )
 
 
 if __name__ == "__main__":
