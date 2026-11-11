@@ -36,3 +36,6 @@ Thumbs.db
 # requirements
 requirement/
 
+# Local-only keyword analysis and word clouds
+/local-keyword-analysis/
+
