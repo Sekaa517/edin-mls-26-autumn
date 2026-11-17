@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 PER_QUERY_FILE = "answer_judge_per_query.jsonl"
+CACHE_FILE = "judge_cache.jsonl"
 SUMMARY_FILE = "answer_judge_summary.json"
 METRICS = (
     "normalised_answer_score",
@@ -22,6 +23,25 @@ def resolve_per_query_path(path: str | Path) -> Path:
     if path.is_dir():
         return path / PER_QUERY_FILE
     return path
+
+
+def resolve_judge_input(path: str | Path) -> tuple[Path, str]:
+    """Prefer final per-query output, then fall back to partial judge cache."""
+    path = Path(path)
+    if path.is_file():
+        source_type = "judge_cache" if path.name == CACHE_FILE else "per_query"
+        return path, source_type
+    if not path.is_dir():
+        raise FileNotFoundError(path)
+    per_query = path / PER_QUERY_FILE
+    if per_query.is_file():
+        return per_query, "per_query"
+    cache = path / CACHE_FILE
+    if cache.is_file():
+        return cache, "judge_cache_partial"
+    raise FileNotFoundError(
+        f"{path}: neither {PER_QUERY_FILE} nor {CACHE_FILE} exists"
+    )
 
 
 def resolve_judge_model(path: str | Path) -> str | None:
@@ -72,9 +92,83 @@ def load_prefix(per_query_path: str | Path, n: int) -> list[dict]:
     return rows
 
 
+def load_prefix_from_cache(cache_path: str | Path, n: int) -> tuple[list[dict], dict]:
+    if n < 1:
+        raise ValueError("n must be positive")
+    path = Path(cache_path)
+    if not path.is_file():
+        raise FileNotFoundError(path)
+
+    grouped: dict[str, dict] = {}
+    order: list[str] = []
+    seen_cache_keys: set[str] = set()
+    with path.open("r", encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, start=1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{path}:{line_number}: invalid JSON: {exc}") from exc
+            query_id = row.get("query_id")
+            cache_key = row.get("cache_key")
+            result = row.get("result")
+            if not isinstance(query_id, str) or not query_id:
+                raise ValueError(f"{path}:{line_number}: missing query_id")
+            if not isinstance(cache_key, str):
+                raise ValueError(f"{path}:{line_number}: missing cache_key")
+            if cache_key in seen_cache_keys:
+                continue
+            seen_cache_keys.add(cache_key)
+            if not isinstance(result, dict):
+                raise ValueError(f"{path}:{line_number}: missing result object")
+            for metric in ("correctness", "grounding", "completeness"):
+                value = result.get(metric)
+                if not isinstance(value, (int, float)):
+                    raise ValueError(
+                        f"{path}:{line_number}: result has no numeric {metric}"
+                    )
+            if query_id not in grouped:
+                grouped[query_id] = {"results": []}
+                order.append(query_id)
+            grouped[query_id]["results"].append(result)
+
+    if len(order) < n:
+        raise ValueError(
+            f"{path}: requested first {n} queries, but cache contains only "
+            f"{len(order)} unique queries"
+        )
+
+    rows = []
+    repeat_counts = []
+    for query_id in order[:n]:
+        results = grouped[query_id]["results"]
+        repeat_counts.append(len(results))
+        components = {
+            metric: statistics.mean(float(result[metric]) for result in results)
+            for metric in ("correctness", "grounding", "completeness")
+        }
+        rows.append({
+            "query_id": query_id,
+            **components,
+            "normalised_answer_score": sum(components.values()) / 12.0,
+        })
+    return rows, {
+        "repeats_min": min(repeat_counts),
+        "repeats_max": max(repeat_counts),
+        "repeats_all_equal": min(repeat_counts) == max(repeat_counts),
+        "cache_entries_read": len(seen_cache_keys),
+        "available_cached_queries": len(order),
+    }
+
+
 def summarize_prefix(input_path: str | Path, n: int) -> dict:
-    per_query_path = resolve_per_query_path(input_path)
-    rows = load_prefix(per_query_path, n)
+    source_path, source_type = resolve_judge_input(input_path)
+    cache_metadata = None
+    if source_type == "judge_cache_partial":
+        rows, cache_metadata = load_prefix_from_cache(source_path, n)
+    else:
+        rows = load_prefix(source_path, n)
     values = {metric: [] for metric in METRICS}
     for index, row in enumerate(rows, start=1):
         components = []
@@ -94,7 +188,8 @@ def summarize_prefix(input_path: str | Path, n: int) -> dict:
 
     return {
         "input": str(Path(input_path).resolve()),
-        "per_query_file": str(per_query_path.resolve()),
+        "source_file": str(source_path.resolve()),
+        "source_type": source_type,
         "judge_model": resolve_judge_model(input_path),
         "n": n,
         "first_query_id": rows[0]["query_id"],
@@ -107,6 +202,7 @@ def summarize_prefix(input_path: str | Path, n: int) -> dict:
         "zero_normalised_score_count": sum(
             score == 0.0 for score in values["normalised_answer_score"]
         ),
+        "partial_cache": cache_metadata,
     }
 
 
@@ -156,6 +252,14 @@ def main():
             f"{(summary['judge_model'] or '-'):<42} "
             f"{summary['input']}"
         )
+        if summary["source_type"] == "judge_cache_partial":
+            metadata = summary["partial_cache"]
+            print(
+                "  partial cache: "
+                f"available_queries={metadata['available_cached_queries']}, "
+                f"repeats={metadata['repeats_min']}..{metadata['repeats_max']}, "
+                f"all_equal={metadata['repeats_all_equal']}"
+            )
 
     if len(summaries) > 1:
         query_sets = [tuple(item["query_ids"]) for item in summaries]

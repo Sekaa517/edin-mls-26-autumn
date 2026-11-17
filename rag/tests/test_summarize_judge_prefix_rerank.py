@@ -76,6 +76,37 @@ class JudgePrefixSummaryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "only 1 are available"):
                 summarize_prefix(path, 2)
 
+    def test_partial_cache_prefix_is_supported(self):
+        cache_rows = []
+        for query_id in ("q1", "q2", "q3"):
+            for repeat in range(2):
+                cache_rows.append({
+                    "cache_key": f"{query_id}-{repeat}",
+                    "query_id": query_id,
+                    "result": {
+                        "correctness": 2 if repeat == 0 else 4,
+                        "grounding": 1,
+                        "completeness": 2,
+                        "explanation": "",
+                    },
+                })
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as temp:
+            directory = Path(temp)
+            (directory / "judge_cache.jsonl").write_text(
+                "\n".join(json.dumps(row) for row in cache_rows) + "\n",
+                encoding="utf-8",
+            )
+            summary = summarize_prefix(directory, 2)
+
+        self.assertEqual(summary["source_type"], "judge_cache_partial")
+        self.assertEqual(summary["query_ids"], ["q1", "q2"])
+        self.assertEqual(summary["mean_scores"]["correctness"], 3.0)
+        self.assertAlmostEqual(
+            summary["mean_scores"]["normalised_answer_score"],
+            (3.0 + 1.0 + 2.0) / 12.0,
+        )
+        self.assertTrue(summary["partial_cache"]["repeats_all_equal"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
