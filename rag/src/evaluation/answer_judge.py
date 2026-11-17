@@ -143,6 +143,10 @@ def append_cache(path: Path, row):
         f.flush()
 
 
+class JudgeOutputError(RuntimeError):
+    """The judge returned invalid JSON or an invalid score schema."""
+
+
 class Judge:
     def __init__(self, model: str, retries: int = 3):
         try:
@@ -210,6 +214,7 @@ class Judge:
         )
 
         last = None
+        last_was_output_error = False
         for attempt in range(self.retries):
             try:
                 r = self.client.chat.completions.create(
@@ -220,11 +225,22 @@ class Judge:
                     ],
                     temperature=0.0,
                 )
+            except Exception as e:
+                last = e
+                last_was_output_error = False
+                if attempt + 1 < self.retries:
+                    time.sleep(min(2 ** attempt, 4))
+                continue
+
+            try:
                 return self.parse(r.choices[0].message.content)
             except Exception as e:
                 last = e
+                last_was_output_error = True
                 if attempt + 1 < self.retries:
                     time.sleep(min(2 ** attempt, 4))
+        if last_was_output_error:
+            raise JudgeOutputError(f"judge output could not be parsed: {last}")
         raise RuntimeError(f"judge request failed: {last}")
 
 

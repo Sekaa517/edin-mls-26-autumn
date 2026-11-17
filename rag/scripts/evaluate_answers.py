@@ -4,9 +4,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import argparse
+import csv
 import os
 from src.evaluation.answer_judge import (
-    Judge, RUBRIC_VERSION, SCRIPT_VERSION, build_public_gold, load_jsonl,
+    Judge, JudgeOutputError, RUBRIC_VERSION, SCRIPT_VERSION, build_public_gold, load_jsonl,
     load_cache, cache_key, append_cache, mean, write_json_atomic, write_jsonl_atomic,
 )
 
@@ -31,6 +32,64 @@ def validate_candidates(rows, gold, split, allow_subset=False):
         raise ValueError(f"Missing {len(set(gold)-seen)} queries; use --allow-subset for a labelled diagnostic subset")
     return seen
 
+
+def evaluate_rows(rows, gold, judge, model, cache_path, cache, repeats, split,
+                  skip_invalid_judge=False):
+    results = []
+    skipped = []
+    for row in rows:
+        qid = row["query_id"]
+        docs = gold[qid]["gold_documents"]
+        repeated = []
+        try:
+            for rep in range(repeats):
+                key = cache_key(
+                    model + "@" + str(judge.client.base_url),
+                    row["transcript"], row["answer"], docs, rep,
+                )
+                if key in cache:
+                    score = Judge.parse(__import__("json").dumps(cache[key]["result"]))
+                else:
+                    score = judge.evaluate(row["transcript"], row["answer"], docs)
+                    entry = {"cache_key": key, "query_id": qid, "result": score}
+                    append_cache(cache_path, entry)
+                    cache[key] = entry
+                repeated.append(score)
+        except JudgeOutputError as error:
+            if not skip_invalid_judge:
+                raise
+            skipped.append({
+                "query_id": qid,
+                "repeat_index": rep,
+                "error": str(error),
+            })
+            print(f"{qid}: SKIPPED invalid judge output after retries")
+            continue
+
+        result = {"query_id": qid, "split": split, "question_mode": "transcript"}
+        for dim in ("correctness", "grounding", "completeness"):
+            result[dim] = mean([r[dim] for r in repeated])
+        result["normalised_answer_score"] = sum(
+            result[d] for d in ("correctness", "grounding", "completeness")
+        ) / 12
+        result["judge_explanations"] = [r["explanation"] for r in repeated]
+        results.append(result)
+        print(f"{qid}: {result['normalised_answer_score']:.3f}")
+    return results, skipped
+
+
+def write_skipped_tsv(path, skipped):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=("query_id", "repeat_index", "error"),
+            delimiter="\t",
+        )
+        writer.writeheader()
+        writer.writerows(skipped)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--candidates", type=Path, required=True)
@@ -41,6 +100,14 @@ def main():
     ap.add_argument("--repeats", type=int, default=1)
     ap.add_argument("--api-retries", type=int, default=3)
     ap.add_argument("--allow-subset", action="store_true")
+    ap.add_argument(
+        "--skip-invalid-judge",
+        action="store_true",
+        help=(
+            "Skip a query after judge JSON/schema retries are exhausted and "
+            "continue with later queries."
+        ),
+    )
     ap.add_argument("--dry-run", action="store_true", help="Validate inputs without API calls or output writes")
     args = ap.parse_args()
     if args.repeats < 1 or args.api_retries < 1:
@@ -57,33 +124,27 @@ def main():
     judge = Judge(model, retries=args.api_retries)
     cache_path = args.out_dir / "judge_cache.jsonl"
     cache = load_cache(cache_path)
-    results = []
-    for row in rows:
-        qid = row["query_id"]
-        docs = gold[qid]["gold_documents"]
-        repeated = []
-        for rep in range(args.repeats):
-            key = cache_key(model + "@" + str(judge.client.base_url), row["transcript"], row["answer"], docs, rep)
-            if key in cache:
-                score = Judge.parse(__import__("json").dumps(cache[key]["result"]))
-            else:
-                score = judge.evaluate(row["transcript"], row["answer"], docs)
-                entry = {"cache_key": key, "query_id": qid, "result": score}
-                append_cache(cache_path, entry)
-                cache[key] = entry
-            repeated.append(score)
-        result = {"query_id": qid, "split": args.split, "question_mode": "transcript"}
-        for dim in ("correctness", "grounding", "completeness"):
-            result[dim] = mean([r[dim] for r in repeated])
-        result["normalised_answer_score"] = sum(result[d] for d in ("correctness", "grounding", "completeness")) / 12
-        result["judge_explanations"] = [r["explanation"] for r in repeated]
-        results.append(result)
-        print(f"{qid}: {result['normalised_answer_score']:.3f}")
+    results, skipped = evaluate_rows(
+        rows,
+        gold,
+        judge,
+        model,
+        cache_path,
+        cache,
+        args.repeats,
+        args.split,
+        args.skip_invalid_judge,
+    )
     write_jsonl_atomic(args.out_dir / "answer_judge_per_query.jsonl", results)
+    write_skipped_tsv(args.out_dir / "skipped_queries.tsv", skipped)
     summary = {"script_version": SCRIPT_VERSION, "rubric_version": RUBRIC_VERSION,
                "judge_model": model, "question_mode": "transcript", "split": args.split,
-               "queries": len(results), "expected_queries": len(gold), "coverage": len(seen)/len(gold),
-               "is_subset": seen != set(gold), "repeats": args.repeats}
+               "queries": len(results), "candidate_queries": len(rows),
+               "evaluated_queries": len(results), "skipped_queries": len(skipped),
+               "expected_queries": len(gold), "coverage": len(seen)/len(gold),
+               "evaluation_coverage": len(results)/len(gold),
+               "is_subset": seen != set(gold), "repeats": args.repeats,
+               "skip_invalid_judge": args.skip_invalid_judge}
     for dim in ("correctness", "grounding", "completeness", "normalised_answer_score"):
         summary["mean_" + dim] = mean([r[dim] for r in results])
     write_json_atomic(args.out_dir / "answer_judge_summary.json", summary)
