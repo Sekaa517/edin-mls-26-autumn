@@ -223,7 +223,7 @@ class Judge:
                         {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
                         {"role": "user", "content": prompt},
                     ],
-                    temperature=0.0,
+                    temperature=0.2,
                 )
             except Exception as e:
                 last = e
